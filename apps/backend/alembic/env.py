@@ -1,34 +1,43 @@
+import sys
+import os
 from logging.config import fileConfig
 from sqlalchemy import engine_from_config, pool
 from alembic import context
-from app.models.resume import Resume
 
-# 👇 import your models here
+# ✅ Add your app to the path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+
+# ✅ Import Base and all models (existing + new interview models)
 from app.core.database import Base
+from app.models.resume import Resume
 from app.models.candidate import Candidate
+from app.models import interview  # 👈 import your new interview models
 
-# ✅ This is the one Alembic needs
+# ✅ Alembic target metadata
 target_metadata = Base.metadata
-# ----------------------------------------------------------------
 
-# Alembic Config object
+# ----------------------------------------------------------------
+# Alembic Config
+# ----------------------------------------------------------------
 config = context.config
 
-# Interpret the config file for Python logging.
+# ✅ Load URL from alembic.ini if not already set
+if not config.get_main_option("sqlalchemy.url"):
+    config.set_main_option("sqlalchemy.url", "postgresql://localhost/ai_interviewer_db")
+
+# ✅ Logging setup
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# other values from the config can be used here if needed
-# my_important_option = config.get_main_option("my_important_option")
-# ... etc.
-
+# ----------------------------------------------------------------
+# Migration Runners
 # ----------------------------------------------------------------
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode."""
     url = config.get_main_option("sqlalchemy.url")
     context.configure(
         url=url,
-        target_metadata=target_metadata,  # ✅ keep this one
+        target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
     )
@@ -48,7 +57,7 @@ def run_migrations_online() -> None:
     with connectable.connect() as connection:
         context.configure(
             connection=connection,
-            target_metadata=target_metadata,  # ✅ keep this one
+            target_metadata=target_metadata,
         )
 
         with context.begin_transaction():
