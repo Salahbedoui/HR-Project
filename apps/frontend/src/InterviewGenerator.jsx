@@ -30,9 +30,9 @@ function InterviewGenerator() {
   const [finalSummary, setFinalSummary] = useState("");
   const [stage, setStage] = useState("upload"); // upload | intro | interview | summary
   const [isTyping, setIsTyping] = useState(false);
+  const [autoClosing, setAutoClosing] = useState(false); // 🌟 new state
 
   const maxQuestions = 5;
-
   const handleFileChange = (e) => setFile(e.target.files[0]);
 
   // ---------------------- Step 1: Upload Resume ----------------------
@@ -97,7 +97,7 @@ function InterviewGenerator() {
     }
   };
 
-  // ---------------------- Step 3: Handle Answer (Auto Next) ----------------------
+  // ---------------------- Step 3: Handle Answer (Auto Next + Auto Close) ----------------------
   const handleNextQuestion = async () => {
     if (!answer.trim()) return;
 
@@ -106,10 +106,16 @@ function InterviewGenerator() {
     setAnswer("");
     setIsLoading(true);
 
-    // ✅ Check if finished
+    // ✅ When last question answered — show closing message
     if (updatedConversation.length >= maxQuestions) {
+      setAutoClosing(true);
+      setQuestion("🤖 Interview completed. Generating your performance summary...");
       await generateSummary(updatedConversation);
-      setStage("summary");
+
+      setTimeout(() => {
+        setAutoClosing(false);
+        setStage("summary");
+      }, 3000);
       setIsLoading(false);
       return;
     }
@@ -129,22 +135,26 @@ function InterviewGenerator() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail);
 
-      // ✅ Handle completed interview
       if (data.completed) {
+        setAutoClosing(true);
+        setQuestion(data.message || "🤖 Interview completed. Generating summary...");
         await generateSummary(updatedConversation);
-        setStage("summary");
+        setTimeout(() => {
+          setAutoClosing(false);
+          setStage("summary");
+        }, 3000);
         setIsLoading(false);
         return;
       }
 
-      // 🧠 Simulate typing animation
+      // 🧠 Simulated typing animation
       setIsTyping(true);
       let text = "";
       const chars = (data.question || "").split("");
       for (let i = 0; i < chars.length; i++) {
         text += chars[i];
         setQuestion(text);
-        await new Promise((r) => setTimeout(r, 20)); // typing speed
+        await new Promise((r) => setTimeout(r, 20));
       }
       setIsTyping(false);
     } catch (err) {
@@ -239,10 +249,47 @@ function InterviewGenerator() {
 
       {/* 🗣️ Interview Stage */}
       {stage === "interview" && (
-        <div style={{ marginTop: 40 }}>
+        <div style={{ marginTop: 40, transition: "opacity 0.8s ease" }}>
           <h3>📝 Interview in Progress</h3>
           <p>
             🕐 Question {conversation.length + 1} / {maxQuestions}
+          </p>
+
+          {/* 🔵 Live Progress Bar */}
+          <div
+            style={{
+              width: "100%",
+              background: "#e5e7eb",
+              borderRadius: "9999px",
+              height: "12px",
+              marginTop: "8px",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                width: `${(conversation.length / maxQuestions) * 100}%`,
+                height: "100%",
+                background:
+                  conversation.length / maxQuestions >= 0.8
+                    ? "#22c55e"
+                    : conversation.length / maxQuestions >= 0.5
+                    ? "#f59e0b"
+                    : "#3b82f6",
+                transition: "width 0.5s ease",
+              }}
+            ></div>
+          </div>
+
+          <p
+            style={{
+              marginTop: "8px",
+              fontSize: "0.9rem",
+              color: "#6b7280",
+              textAlign: "right",
+            }}
+          >
+            Progress: {Math.round((conversation.length / maxQuestions) * 100)}%
           </p>
 
           {conversation.map((turn, i) => (
@@ -262,26 +309,28 @@ function InterviewGenerator() {
               <TypingEffect text={question} />
             </p>
 
-            <textarea
-              value={answer}
-              onChange={(e) => setAnswer(e.target.value)}
-              rows={3}
-              placeholder="Type your answer and press Enter..."
-              style={{
-                width: "100%",
-                marginTop: 10,
-                padding: 8,
-                borderRadius: 4,
-                border: "1px solid #ccc",
-              }}
-              onKeyDown={async (e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  await handleNextQuestion();
-                }
-              }}
-              disabled={isLoading}
-            />
+            {!autoClosing && (
+              <textarea
+                value={answer}
+                onChange={(e) => setAnswer(e.target.value)}
+                rows={3}
+                placeholder="Type your answer and press Enter..."
+                style={{
+                  width: "100%",
+                  marginTop: 10,
+                  padding: 8,
+                  borderRadius: 4,
+                  border: "1px solid #ccc",
+                }}
+                onKeyDown={async (e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    await handleNextQuestion();
+                  }
+                }}
+                disabled={isLoading}
+              />
+            )}
 
             {(isTyping || isLoading) && (
               <p style={{ color: "#666", fontStyle: "italic", marginTop: 10 }}>
@@ -292,39 +341,101 @@ function InterviewGenerator() {
         </div>
       )}
 
-      {/* 🎯 Summary Stage */}
+      {/* 🎯 Summary Dashboard */}
       {stage === "summary" && (
-        <div style={{ marginTop: 40 }}>
-          <h3>🎯 Interview Summary</h3>
+        <div
+          style={{
+            marginTop: 40,
+            opacity: 1,
+            transition: "opacity 1s ease",
+            textAlign: "center",
+          }}
+        >
+          <h3 style={{ fontSize: "1.8rem" }}>🎯 Interview Performance Dashboard</h3>
 
-          {/* Score + Intro Dashboard Card */}
+          {/* Score Bar Visualization */}
+          <div
+            style={{
+              margin: "20px auto",
+              width: "80%",
+              background: "#e5e7eb",
+              borderRadius: "9999px",
+              overflow: "hidden",
+              height: "20px",
+            }}
+          >
+            <div
+              style={{
+                width: `${score}%`,
+                height: "100%",
+                background:
+                  score >= 80 ? "#22c55e" : score >= 60 ? "#f59e0b" : "#ef4444",
+                transition: "width 1.2s ease",
+              }}
+            ></div>
+          </div>
+
+          <h2
+            style={{
+              color: score >= 80 ? "#166534" : score >= 60 ? "#78350f" : "#7f1d1d",
+              marginTop: "10px",
+              fontSize: "1.4rem",
+            }}
+          >
+            Final Score: {score}/100
+          </h2>
+
+          {/* Candidate Intro Card */}
           <div
             style={{
               background: "#f0f9ff",
               border: "2px solid #bae6fd",
               borderRadius: "1rem",
               padding: "1.5rem",
-              marginBottom: "1.5rem",
-              textAlign: "center",
+              margin: "1.5rem 0",
+              textAlign: "left",
             }}
           >
-            <h2 style={{ color: "#0c4a6e", fontSize: "1.5rem", marginBottom: "0.5rem" }}>
-              Final Score: {score}/100
-            </h2>
-            <p style={{ color: "#0369a1" }}>{intro}</p>
+            <h4 style={{ color: "#0369a1" }}>📄 Candidate Overview</h4>
+            <ReactMarkdown>{intro}</ReactMarkdown>
           </div>
 
-          {/* Summary Section */}
+          {/* AI Summary Card */}
           <div
             style={{
               background: "#f0fdf4",
               border: "1px solid #bbf7d0",
               padding: 15,
               borderRadius: 8,
+              textAlign: "left",
             }}
           >
+            <h4 style={{ color: "#166534" }}>🧠 AI Summary</h4>
             <ReactMarkdown>{finalSummary}</ReactMarkdown>
           </div>
+
+          {/* Restart Button */}
+          <button
+            onClick={() => {
+              setStage("upload");
+              setConversation([]);
+              setQuestion("");
+              setAnswer("");
+              setFinalSummary("");
+              setFile(null);
+            }}
+            style={{
+              marginTop: 25,
+              background: "#2563eb",
+              color: "white",
+              border: "none",
+              borderRadius: 6,
+              padding: "10px 20px",
+              cursor: "pointer",
+            }}
+          >
+            🔄 Restart Interview
+          </button>
         </div>
       )}
     </div>
