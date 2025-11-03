@@ -1,11 +1,15 @@
-import React from 'react';
-import InterviewGenerator from './InterviewGenerator';
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import InterviewGenerator from "./InterviewGenerator";
+import InterviewPage from "./InterviewPage";
 
 function App() {
   return (
-    <div>
-      <InterviewGenerator />
-    </div>
+    <Router>
+      <Routes>
+        <Route path="/" element={<InterviewGenerator />} />
+        <Route path="/interview" element={<InterviewPage />} />
+      </Routes>
+    </Router>
   );
 }
 

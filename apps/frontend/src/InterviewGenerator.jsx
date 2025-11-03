@@ -1,54 +1,65 @@
 import React, { useState, useEffect } from "react";
-import ReactMarkdown from "react-markdown";
+import { useNavigate } from "react-router-dom";
+import {
+  Chart as ChartJS,
+  RadialLinearScale,
+  PointElement,
+  LineElement,
+  Filler,
+  Tooltip,
+  Legend,
+} from "chart.js";
 
-// ✨ Typing Animation Component
-const TypingEffect = ({ text, speed = 25 }) => {
-  const [displayed, setDisplayed] = useState("");
-  useEffect(() => {
-    if (!text) return;
-    let i = 0;
-    const interval = setInterval(() => {
-      setDisplayed(text.slice(0, i));
-      i++;
-      if (i > text.length) clearInterval(interval);
-    }, speed);
-    return () => clearInterval(interval);
-  }, [text, speed]);
-  return <span>{displayed}</span>;
-};
+ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, Tooltip, Legend);
 
-function InterviewGenerator() {
+export default function InterviewGenerator() {
+  const navigate = useNavigate();
   const [file, setFile] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState(null);
   const [resumeData, setResumeData] = useState(null);
-  const [score, setScore] = useState(null);
-  const [intro, setIntro] = useState("");
-  const [question, setQuestion] = useState("");
-  const [answer, setAnswer] = useState("");
-  const [conversation, setConversation] = useState([]);
-  const [finalSummary, setFinalSummary] = useState("");
-  const [stage, setStage] = useState("upload"); // upload | intro | interview | summary
-  const [isTyping, setIsTyping] = useState(false);
-  const [autoClosing, setAutoClosing] = useState(false); // 🌟 new state
+  const [jobList, setJobList] = useState([]);
+  const [selectedJob, setSelectedJob] = useState(null);
+  const [jobDropdownOpen, setJobDropdownOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
 
-  const maxQuestions = 5;
   const handleFileChange = (e) => setFile(e.target.files[0]);
 
-  // ---------------------- Step 1: Upload Resume ----------------------
+  // ✅ Load jobs on mount
+  useEffect(() => {
+    const fetchJobs = async () => {
+      setIsLoading(true);
+      try {
+        const res = await fetch("/api/jobs/remoteok");
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Failed to load jobs");
+        setJobList(data.jobs || []);
+      } catch (err) {
+        setError("Failed to load jobs: " + err.message);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchJobs();
+  }, []);
+
+  const handleJobSelection = (job) => {
+    setSelectedJob(job);
+    setJobDropdownOpen(false);
+  };
+
   const handleUpload = async () => {
     if (!file) return alert("Please select a file first!");
-
     const formData = new FormData();
     formData.append("file", file);
 
     try {
-      setIsLoading(true);
+      setAnalyzing(true);
       const res = await fetch("/api/resume/upload", { method: "POST", body: formData });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Upload failed");
 
-      // Analyze resume
       const analyzeRes = await fetch("/api/interview/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -57,389 +68,134 @@ function InterviewGenerator() {
       const analyzeData = await analyzeRes.json();
       if (!analyzeRes.ok) throw new Error(analyzeData.detail);
 
-      setScore(analyzeData.score);
-      setIntro(analyzeData.intro);
-      setResumeData({
-        ...data,
-        session_id: analyzeData.session_id,
+      setResumeData(analyzeData);
+      navigate("/interview", {
+        state: { resumeData: analyzeData, resumeText: data.text_content },
       });
-      setStage("intro");
     } catch (err) {
       setError(err.message);
     } finally {
-      setIsLoading(false);
+      setAnalyzing(false);
     }
   };
 
-  // ---------------------- Step 2: Start Interview ----------------------
-  const startInterview = async () => {
-    setIsLoading(true);
-    try {
-      const res = await fetch("/api/interview/next", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          session_id: resumeData.session_id,
-          resume_text: resumeData.text_content,
-          score,
-          last_answer: null,
-        }),
-      });
+  // ✅ Filter jobs by search term
+  const filteredJobs = jobList.filter((job) => {
+    const search = searchTerm.toLowerCase();
+    return (
+      job.title?.toLowerCase().includes(search) ||
+      job.company?.toLowerCase().includes(search) ||
+      job.location?.toLowerCase().includes(search)
+    );
+  });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail);
-      setQuestion(data.question);
-      setStage("interview");
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // ---------------------- Step 3: Handle Answer (Auto Next + Auto Close) ----------------------
-  const handleNextQuestion = async () => {
-    if (!answer.trim()) return;
-
-    const updatedConversation = [...conversation, { question, answer }];
-    setConversation(updatedConversation);
-    setAnswer("");
-    setIsLoading(true);
-
-    // ✅ When last question answered — show closing message
-    if (updatedConversation.length >= maxQuestions) {
-      setAutoClosing(true);
-      setQuestion("🤖 Interview completed. Generating your performance summary...");
-      await generateSummary(updatedConversation);
-
-      setTimeout(() => {
-        setAutoClosing(false);
-        setStage("summary");
-      }, 3000);
-      setIsLoading(false);
-      return;
-    }
-
-    try {
-      const res = await fetch("/api/interview/next", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          session_id: resumeData.session_id,
-          resume_text: resumeData.text_content,
-          score,
-          last_answer: answer,
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail);
-
-      if (data.completed) {
-        setAutoClosing(true);
-        setQuestion(data.message || "🤖 Interview completed. Generating summary...");
-        await generateSummary(updatedConversation);
-        setTimeout(() => {
-          setAutoClosing(false);
-          setStage("summary");
-        }, 3000);
-        setIsLoading(false);
-        return;
-      }
-
-      // 🧠 Simulated typing animation
-      setIsTyping(true);
-      let text = "";
-      const chars = (data.question || "").split("");
-      for (let i = 0; i < chars.length; i++) {
-        text += chars[i];
-        setQuestion(text);
-        await new Promise((r) => setTimeout(r, 20));
-      }
-      setIsTyping(false);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // ---------------------- Step 4: Generate Summary ----------------------
-  const generateSummary = async (conversationData) => {
-    try {
-      const res = await fetch("/api/interview/summary", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          resume_text: resumeData.text_content,
-          score,
-          conversation: conversationData,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail);
-      setFinalSummary(data.summary);
-    } catch (err) {
-      setError(err.message);
-    }
-  };
-
-  // ---------------------- Step 5: UI ----------------------
   return (
-    <div style={{ maxWidth: 700, margin: "80px auto", fontFamily: "Inter, sans-serif" }}>
-      <h1 style={{ textAlign: "center" }}>AI Interview Assistant 🤖</h1>
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-gray-50 via-white to-gray-100 text-gray-800 px-6 py-10 font-sans transition-all duration-500">
+      {/* Header */}
+      <div className="w-full max-w-3xl text-center">
+        <h1 className="text-5xl font-extrabold mb-3 bg-gradient-to-r from-indigo-600 to-blue-500 bg-clip-text text-transparent">
+          AI Interview Assistant 🤖
+        </h1>
+        <p className="text-lg text-gray-600 mb-8">
+          🍏 <span className="font-semibold">Job Matching</span> — Select a job before uploading your resume
+        </p>
 
-      {/* 🧱 Upload Stage */}
-      {stage === "upload" && (
-        <div style={{ textAlign: "center" }}>
-          <input type="file" accept=".pdf,.docx" onChange={handleFileChange} />
+        {/* Job Selection */}
+        <div className="relative inline-block text-left mb-10 w-80">
+          <button
+            onClick={() => setJobDropdownOpen((prev) => !prev)}
+            disabled={isLoading}
+            className="w-full rounded-lg bg-gradient-to-r from-blue-600 to-indigo-500 px-6 py-3 text-white font-semibold shadow hover:from-blue-700 hover:to-indigo-600 transition disabled:opacity-50"
+          >
+            {isLoading ? "Loading Jobs…" : selectedJob ? selectedJob.title : "Select a Job"}
+          </button>
+
+          {jobDropdownOpen && (
+            <div className="absolute mt-3 w-full max-h-80 overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-lg z-10 animate-fadeIn">
+              {/* Search Input */}
+              <div className="p-2 border-b border-gray-200 sticky top-0 bg-white">
+                <input
+                  type="text"
+                  placeholder="Search jobs..."
+                  className="w-full px-3 py-2 text-gray-700 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+              </div>
+
+              {/* Job List */}
+              {filteredJobs.length > 0 ? (
+                filteredJobs.map((job) => (
+                  <div
+                    key={job.id}
+                    onClick={() => handleJobSelection(job)}
+                    className={`p-3 border-b border-gray-100 cursor-pointer hover:bg-blue-50 transition ${
+                      selectedJob?.id === job.id ? "bg-blue-100" : ""
+                    }`}
+                  >
+                    <p className="font-semibold text-gray-800">{job.title}</p>
+                    <p className="text-sm text-gray-500">
+                      {job.company} — {job.location || "Remote"}
+                    </p>
+                  </div>
+                ))
+              ) : (
+                <div className="p-3 text-gray-500 text-sm text-center">No jobs found.</div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Upload Section */}
+        <div className="mt-4 bg-white border border-gray-200 rounded-2xl p-8 shadow-lg max-w-xl mx-auto transition-transform hover:shadow-2xl">
+          <h3 className="text-2xl font-semibold mb-4 text-gray-900 text-center">
+            Upload Your Resume
+          </h3>
+
+          <label className="block mb-4 cursor-pointer border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:bg-gray-50 transition">
+            <input type="file" accept=".pdf,.docx" onChange={handleFileChange} className="hidden" />
+            <span className="text-gray-600">
+              {file ? `📄 ${file.name}` : "Click to choose or drag & drop your file here"}
+            </span>
+          </label>
+
           <button
             onClick={handleUpload}
-            disabled={isLoading}
-            style={{
-              marginLeft: 10,
-              padding: "8px 16px",
-              background: "#2563eb",
-              color: "white",
-              border: "none",
-              borderRadius: 4,
-              cursor: "pointer",
-            }}
+            disabled={analyzing}
+            className="w-full rounded-lg bg-gradient-to-r from-indigo-500 to-blue-600 text-white py-3 font-semibold hover:from-indigo-600 hover:to-blue-700 active:scale-95 transition-all disabled:opacity-50"
           >
-            {isLoading ? "Uploading..." : "Analyze Resume"}
-          </button>
-          {error && <p style={{ color: "red", marginTop: 10 }}>❌ {error}</p>}
-        </div>
-      )}
-
-      {/* 🧠 Intro Stage */}
-      {stage === "intro" && (
-        <div style={{ marginTop: 40, textAlign: "center" }}>
-          <h3>✅ Resume Analysis Complete</h3>
-          <p>
-            <strong>Score:</strong> {score}/100
-          </p>
-          <div
-            style={{
-              background: "#f9fafb",
-              borderRadius: 8,
-              padding: 16,
-              border: "1px solid #e5e7eb",
-              textAlign: "left",
-            }}
-          >
-            <ReactMarkdown>{intro}</ReactMarkdown>
-          </div>
-          <button
-            onClick={startInterview}
-            style={{
-              marginTop: 20,
-              background: "#22c55e",
-              color: "white",
-              border: "none",
-              borderRadius: 5,
-              padding: "10px 20px",
-              cursor: "pointer",
-            }}
-          >
-            Start Interview
-          </button>
-        </div>
-      )}
-
-      {/* 🗣️ Interview Stage */}
-      {stage === "interview" && (
-        <div style={{ marginTop: 40, transition: "opacity 0.8s ease" }}>
-          <h3>📝 Interview in Progress</h3>
-          <p>
-            🕐 Question {conversation.length + 1} / {maxQuestions}
-          </p>
-
-          {/* 🔵 Live Progress Bar */}
-          <div
-            style={{
-              width: "100%",
-              background: "#e5e7eb",
-              borderRadius: "9999px",
-              height: "12px",
-              marginTop: "8px",
-              overflow: "hidden",
-            }}
-          >
-            <div
-              style={{
-                width: `${(conversation.length / maxQuestions) * 100}%`,
-                height: "100%",
-                background:
-                  conversation.length / maxQuestions >= 0.8
-                    ? "#22c55e"
-                    : conversation.length / maxQuestions >= 0.5
-                    ? "#f59e0b"
-                    : "#3b82f6",
-                transition: "width 0.5s ease",
-              }}
-            ></div>
-          </div>
-
-          <p
-            style={{
-              marginTop: "8px",
-              fontSize: "0.9rem",
-              color: "#6b7280",
-              textAlign: "right",
-            }}
-          >
-            Progress: {Math.round((conversation.length / maxQuestions) * 100)}%
-          </p>
-
-          {conversation.map((turn, i) => (
-            <div key={i} style={{ marginBottom: 12 }}>
-              <p>
-                <strong>Q{i + 1}:</strong> {turn.question}
-              </p>
-              <p>
-                <em>Answer:</em> {turn.answer}
-              </p>
-            </div>
-          ))}
-
-          <div style={{ marginTop: 20 }}>
-            <p style={{ backgroundColor: "#eef", padding: 10, borderRadius: 5 }}>
-              <strong>Q{conversation.length + 1}:</strong>{" "}
-              <TypingEffect text={question} />
-            </p>
-
-            {!autoClosing && (
-              <textarea
-                value={answer}
-                onChange={(e) => setAnswer(e.target.value)}
-                rows={3}
-                placeholder="Type your answer and press Enter..."
-                style={{
-                  width: "100%",
-                  marginTop: 10,
-                  padding: 8,
-                  borderRadius: 4,
-                  border: "1px solid #ccc",
-                }}
-                onKeyDown={async (e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    await handleNextQuestion();
-                  }
-                }}
-                disabled={isLoading}
-              />
+            {analyzing ? (
+              <div className="flex justify-center items-center gap-2">
+                <svg
+                  className="animate-spin h-5 w-5 text-white"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  ></circle>
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 100 16v-4l3 3-3 3v-4a8 8 0 01-8-8z"
+                  ></path>
+                </svg>
+                <span>Analyzing Resume…</span>
+              </div>
+            ) : (
+              "Analyze Resume"
             )}
-
-            {(isTyping || isLoading) && (
-              <p style={{ color: "#666", fontStyle: "italic", marginTop: 10 }}>
-                🤖 AI is typing...
-              </p>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* 🎯 Summary Dashboard */}
-      {stage === "summary" && (
-        <div
-          style={{
-            marginTop: 40,
-            opacity: 1,
-            transition: "opacity 1s ease",
-            textAlign: "center",
-          }}
-        >
-          <h3 style={{ fontSize: "1.8rem" }}>🎯 Interview Performance Dashboard</h3>
-
-          {/* Score Bar Visualization */}
-          <div
-            style={{
-              margin: "20px auto",
-              width: "80%",
-              background: "#e5e7eb",
-              borderRadius: "9999px",
-              overflow: "hidden",
-              height: "20px",
-            }}
-          >
-            <div
-              style={{
-                width: `${score}%`,
-                height: "100%",
-                background:
-                  score >= 80 ? "#22c55e" : score >= 60 ? "#f59e0b" : "#ef4444",
-                transition: "width 1.2s ease",
-              }}
-            ></div>
-          </div>
-
-          <h2
-            style={{
-              color: score >= 80 ? "#166534" : score >= 60 ? "#78350f" : "#7f1d1d",
-              marginTop: "10px",
-              fontSize: "1.4rem",
-            }}
-          >
-            Final Score: {score}/100
-          </h2>
-
-          {/* Candidate Intro Card */}
-          <div
-            style={{
-              background: "#f0f9ff",
-              border: "2px solid #bae6fd",
-              borderRadius: "1rem",
-              padding: "1.5rem",
-              margin: "1.5rem 0",
-              textAlign: "left",
-            }}
-          >
-            <h4 style={{ color: "#0369a1" }}>📄 Candidate Overview</h4>
-            <ReactMarkdown>{intro}</ReactMarkdown>
-          </div>
-
-          {/* AI Summary Card */}
-          <div
-            style={{
-              background: "#f0fdf4",
-              border: "1px solid #bbf7d0",
-              padding: 15,
-              borderRadius: 8,
-              textAlign: "left",
-            }}
-          >
-            <h4 style={{ color: "#166534" }}>🧠 AI Summary</h4>
-            <ReactMarkdown>{finalSummary}</ReactMarkdown>
-          </div>
-
-          {/* Restart Button */}
-          <button
-            onClick={() => {
-              setStage("upload");
-              setConversation([]);
-              setQuestion("");
-              setAnswer("");
-              setFinalSummary("");
-              setFile(null);
-            }}
-            style={{
-              marginTop: 25,
-              background: "#2563eb",
-              color: "white",
-              border: "none",
-              borderRadius: 6,
-              padding: "10px 20px",
-              cursor: "pointer",
-            }}
-          >
-            🔄 Restart Interview
           </button>
+
+          {error && <p className="mt-3 text-sm text-red-500 text-center">❌ {error}</p>}
         </div>
-      )}
+      </div>
     </div>
   );
 }
-
-export default InterviewGenerator;
