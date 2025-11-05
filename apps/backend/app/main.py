@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from app.core.database import SessionLocal
-from app.routes import resume_routes, interview_routes
+from app.routes import resume_routes, interview_routes, job_routes
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -32,6 +32,7 @@ def test_db():
     finally:
         db.close()
 
-# All routes live under /api
+# ✅ Include all routers
 app.include_router(resume_routes.router, prefix="/api")
 app.include_router(interview_routes.router, prefix="/api")
+app.include_router(job_routes.router, prefix="/api")  # ✅ correct name

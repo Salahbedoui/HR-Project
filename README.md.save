@@ -1,0 +1,51 @@
+🧠 AI Interview Assistant 🤖
+
+An intelligent, voice-enabled web app that analyzes resumes, matches candidates with jobs, and conducts realistic AI mock interviews using Speech Recognition (STT), Text-to-Speech (TTS), and RAG (Retrieval-Augmented Generation).
+
+⸻
+
+✨ Features
+
+✅ Smart resume parsing and analysis
+✅ Real-time job matching based on embeddings
+✅ AI-driven interview with speech-to-text and text-to-speech
+✅ Analytics radar chart for performance visualization
+✅ RAG-enhanced context for personalized questions
+✅ Modern UI with TailwindCSS + Framer Motion
+
+⚙️ Tech Stack
+Layer			Technology
+Frontend		React + Vite + TailwindCSS + Chart.js + Framer Motion
+Backend			FastAPI + LangChain + ChromaDB + OpenAI API
+Vector Store		Chroma (local persistent embeddings)
+AI Models		Gemini + Web Speech API
+
+
+🏗️ Project Structur
+📦 HR-Project
+ ┣ 📂 apps
+ ┃ ┣ 📂 backend
+ ┃ ┃ ┣ 📂 app
+ ┃ ┃ ┃ ┣ 📂 routes
+ ┃ ┃ ┃ ┣ 📂 services
+ ┃ ┃ ┃ ┣ 📂 models
+ ┃ ┃ ┃ ┣ 📂 schemas
+ ┃ ┃ ┃ ┗ main.py
+ ┃ ┃ ┣ 📜 requirements.txt
+ ┃ ┃ ┣ 📜 .env
+ ┃ ┗ 📂 frontend
+ ┃ ┃ ┣ 📂 src
+ ┃ ┃ ┃ ┣ 📜 InterviewGenerator.jsx
+ ┃ ┃ ┃ ┣ 📜 InterviewPage.jsx
+ ┃ ┃ ┃ ┣ 📜 components/JobSelector.jsx
+ ┃ ┃ ┃ ┗ 📜 SpeechHandler.js
+ ┃ ┃ ┣ 📜 package.json
+ ┃ ┃ ┗ 📜 tailwind.config.js
+ ┗ 📜 README.md
+
+
+🚀 Quick Start
+git clone https://github.com/Salahbedoui/HR-Project.git
+cd HR-Project
+
+cd apps/backend

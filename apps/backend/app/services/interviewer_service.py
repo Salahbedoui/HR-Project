@@ -232,3 +232,143 @@ def summarize_interview(resume_text: str, score: int, conversation: list[dict]):
     except Exception as e:
         print(f"❌ Error summarizing interview: {e}")
         return {"error": str(e)}
+
+# ===== 4️⃣ REAL-TIME ANSWER SCORING (Simple) =====
+def evaluate_answer(session_id: str, question: str, answer: str, total_score: float = 0):
+    """Analyze the candidate's answer and give feedback and a sub-score."""
+    try:
+        model = genai.GenerativeModel(settings.GEMINI_MODEL)
+
+        prompt = f"""
+        You are an interview evaluator. Assess the candidate's answer based on:
+        1. Clarity
+        2. Coherence
+        3. Confidence
+        4. Technical Depth
+
+        Question: {question}
+        Answer: {answer}
+
+        Provide your analysis in this format:
+        Score (0-20): <number>
+        Feedback: <short constructive comment (1 sentence)>
+        """
+
+        response = _gen_with_retry(model, prompt)
+        content = response.text.strip()
+
+        score_match = re.search(r"Score\s*\(0-20\)\s*:\s*(\d+)", content)
+        feedback_match = re.search(r"Feedback\s*:\s*(.*)", content)
+
+        sub_score = int(score_match.group(1)) if score_match else 10
+        feedback = feedback_match.group(1).strip() if feedback_match else "Good response."
+
+        total_score += sub_score
+
+        print(f"✅ Evaluated Answer | Sub-score: {sub_score} | Feedback: {feedback}")
+
+        # Save evaluation as system message
+        save_message(session_id, "system", f"Feedback: {feedback} (Score: {sub_score}/20)")
+
+        return {
+            "sub_score": sub_score,
+            "feedback": feedback,
+            "total_score": total_score
+        }
+
+    except Exception as e:
+        print(f"❌ Error evaluating answer: {e}")
+        return {
+            "sub_score": 0,
+            "feedback": "Evaluation failed due to an internal error.",
+            "total_score": total_score
+        }
+
+# ===== 5️⃣ DETAILED ANSWER SCORING (Per-dimension for charts) =====
+def evaluate_detailed_answer(session_id: int, question: str, answer: str):
+    """
+    Returns per-dimension scoring for a single answer:
+    { clarity, coherence, confidence, technical_depth, engagement, average_score, feedback }
+    All sub-scores expected 0–20.
+    """
+    try:
+        model = genai.GenerativeModel(settings.GEMINI_MODEL)
+        prompt = f"""
+        You are an expert interview assessor. Score the candidate's answer across 5 dimensions (0–20 each):
+
+        - clarity: how clearly the answer communicates ideas
+        - coherence: logical flow and structure
+        - confidence: assertiveness, ownership (without arrogance)
+        - technical_depth: quality of technical/subject matter coverage
+        - engagement: concision, relevance, storytelling/examples
+
+        Question: {question}
+        Answer: {answer}
+
+        Return STRICT JSON ONLY (no prose), shape:
+        {{
+          "clarity": <0-20>,
+          "coherence": <0-20>,
+          "confidence": <0-20>,
+          "technical_depth": <0-20>,
+          "engagement": <0-20>,
+          "feedback": "<1 short sentence of constructive feedback>"
+        }}
+        """
+
+        response = _gen_with_retry(model, prompt)
+        raw = (response.text or "").strip()
+        print("🧪 Detailed eval raw:", raw)
+
+        # Extract JSON robustly
+        m = re.search(r'\{.*\}', raw, re.DOTALL)
+        if not m:
+            raise ValueError("No JSON found in model output")
+
+        data = json.loads(m.group(0))
+
+        # Coerce and clamp
+        def clamp_int(v):
+            try:
+                return max(0, min(int(v), 20))
+            except Exception:
+                return 10
+
+        clarity = clamp_int(data.get("clarity", 10))
+        coherence = clamp_int(data.get("coherence", 10))
+        confidence = clamp_int(data.get("confidence", 10))
+        technical_depth = clamp_int(data.get("technical_depth", 10))
+        engagement = clamp_int(data.get("engagement", 10))
+        feedback = (data.get("feedback") or "").strip() or "Good answer — consider adding a concrete example."
+
+        avg = round((clarity + coherence + confidence + technical_depth + engagement) / 5, 2)
+
+        # Save a compact record into messages (optional, useful for audits)
+        save_message(
+            session_id,
+            "system",
+            f"[DetailedEval] C:{clarity} Co:{coherence} Conf:{confidence} Tech:{technical_depth} Eng:{engagement} | Avg:{avg} | {feedback}"
+        )
+
+        return {
+            "clarity": clarity,
+            "coherence": coherence,
+            "confidence": confidence,
+            "technical_depth": technical_depth,
+            "engagement": engagement,
+            "average_score": avg,
+            "feedback": feedback
+        }
+
+    except Exception as e:
+        print(f"❌ Error in evaluate_detailed_answer: {e}")
+        # Reasonable fallback
+        return {
+            "clarity": 10,
+            "coherence": 10,
+            "confidence": 10,
+            "technical_depth": 10,
+            "engagement": 10,
+            "average_score": 10.0,
+            "feedback": "Evaluation failed; returning neutral scores."
+        }
